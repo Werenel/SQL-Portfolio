@@ -1,0 +1,119 @@
+-- 1. Створюю базову таблицю з акаунтами, підтягуючи дату створення та країну
+WITH base_accounts AS (
+    SELECT 
+        a.id AS account_id,
+        a.send_interval,
+        a.is_verified,
+        a.is_unsubscribed,
+        s.date AS account_creation_date,
+        sp.country
+    FROM `data-analytics-mate.DA.account` a
+    INNER JOIN `data-analytics-mate.DA.account_session` ac_s 
+        ON a.id = ac_s.account_id
+    INNER JOIN `data-analytics-mate.DA.session` s 
+        ON ac_s.ga_session_id = s.ga_session_id
+    INNER JOIN `data-analytics-mate.DA.session_params` sp 
+        ON ac_s.ga_session_id = sp.ga_session_id
+),
+
+-- 2. Рахую метрики для акаунтів (решта метрик заповнюється нулями)
+account_metrics AS (
+    SELECT 
+        account_creation_date AS date,
+        country,
+        send_interval,
+        is_verified,
+        is_unsubscribed,
+        COUNT(DISTINCT account_id) AS account_cnt,
+        0 AS sent_msg,
+        0 AS open_msg,
+        0 AS visit_msg
+    FROM base_accounts
+    GROUP BY 1, 2, 3, 4, 5
+),
+
+-- 3. Рахуюю метрики для емейлів прямим джойном
+email_metrics AS (
+    SELECT 
+        DATE_ADD(ba.account_creation_date, INTERVAL es.sent_date DAY) AS date,
+        ba.country,
+        ba.send_interval,
+        ba.is_verified,
+        ba.is_unsubscribed,
+        0 AS account_cnt,
+        COUNT(DISTINCT es.id_message) AS sent_msg,
+        COUNT(DISTINCT eo.id_message) AS open_msg,
+        COUNT(DISTINCT ev.id_message) AS visit_msg
+    FROM `data-analytics-mate.DA.email_sent` es
+    JOIN base_accounts ba 
+        ON es.id_account = ba.account_id
+    LEFT JOIN `data-analytics-mate.DA.email_open` eo 
+        ON es.id_account = eo.id_account AND es.id_message = eo.id_message
+    LEFT JOIN `data-analytics-mate.DA.email_visit` ev 
+        ON es.id_account = ev.id_account AND es.id_message = ev.id_message
+    GROUP BY 1, 2, 3, 4, 5
+),
+
+-- 4. Об'єднюю два набори даних
+combined_data AS (
+    SELECT * FROM account_metrics
+    UNION ALL
+    SELECT * FROM email_metrics
+),
+
+-- 5. Дедублюю рядки після UNION 
+aggregated_data AS (
+    SELECT 
+        date,
+        country,
+        send_interval,
+        is_verified,
+        is_unsubscribed,
+        SUM(account_cnt) AS account_cnt,
+        SUM(sent_msg) AS sent_msg,
+        SUM(open_msg) AS open_msg,
+        SUM(visit_msg) AS visit_msg
+    FROM combined_data
+    GROUP BY 1, 2, 3, 4, 5
+),
+
+-- 6. Використовую віконні функції для розрахунку загальних сум по країнах
+country_totals AS (
+    SELECT 
+        *,
+        SUM(account_cnt) OVER (PARTITION BY country) AS total_country_account_cnt,
+        SUM(sent_msg) OVER (PARTITION BY country) AS total_country_sent_cnt
+    FROM aggregated_data
+),
+
+-- 7. Рахую рейтинги країн на основі загальних сум
+ranked_data AS (
+    SELECT 
+        *,
+        DENSE_RANK() OVER (ORDER BY total_country_account_cnt DESC) AS rank_total_country_account_cnt,
+        DENSE_RANK() OVER (ORDER BY total_country_sent_cnt DESC) AS rank_total_country_sent_cnt
+    FROM country_totals
+)
+
+-- 8. Фінальний вивід результату з фільтрацією ТОП-10
+SELECT 
+    date,
+    country,
+    send_interval,
+    is_verified,
+    is_unsubscribed,
+    account_cnt,
+    sent_msg,
+    open_msg,
+    visit_msg,
+    total_country_account_cnt,
+    total_country_sent_cnt,
+    rank_total_country_account_cnt,
+    rank_total_country_sent_cnt
+FROM ranked_data
+WHERE rank_total_country_account_cnt <= 10 
+   OR rank_total_country_sent_cnt <= 10;
+
+
+
+https://datastudio.google.com/reporting/43c2984a-854f-448b-8026-40b54131ade8
