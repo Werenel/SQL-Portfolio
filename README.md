@@ -22,7 +22,7 @@ Determine the first and last date an email was sent for each account during the 
 ### 3. Email Marketing Performance & Top 10 Countries
 * **Goal:** Merge account creation data with email engagement metrics to rank the Top 10 countries by user acquisition and messaging volume.
 * **Key Skills:** `UNION ALL` for combining different data granularities, multi-level CTEs, Data Deduplication, and advanced window functions (`DENSE_RANK()`).
-* **Dashboard:** [Interactive Looker Studio Report](https://datastudio.google.com/reporting/43c2984a-854f-448b-8026-40b54131ade8) 📊
+* **Dashboard:** [Interactive Looker Studio Report]([https://datastudio.google.com/reporting/43c2984a-854f-448b-8026-40b54131ade8]) 📊
 * **File:** `Top_10_Countries_Email_Metrics_Module_Task.sql`
 
 ---
